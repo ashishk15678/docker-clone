@@ -1,34 +1,75 @@
-#include <cstdlib>
-#include <functional>
-#include <netinet/in.h>
+#ifndef HTTP_H
+#define HTTP_H
+
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <pthread.h>
+#include <signal.h>
+#include <errno.h>
 
-void *createServer(int port) {
-  struct sockaddr_in address;
-  int address_len = sizeof(address);
+#define MAX_REQUEST_SIZE 8192
+#define MAX_RESPONSE_SIZE 8192
+#define MAX_HEADER_SIZE 1024
+#define MAX_URL_SIZE 512
+#define MAX_METHOD_SIZE 16
+#define MAX_VERSION_SIZE 16
+#define MAX_THREADS 10
 
-  int server_fd, new_socket;
+#define DEFAULT_PORT 2375
+#define DEFAULT_HOST "127.0.0.1"
 
-  if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
-    perror("socket failed ");
-    exit(127);
-  }
+typedef struct {
+    char method[MAX_METHOD_SIZE];
+    char url[MAX_URL_SIZE];
+    char version[MAX_VERSION_SIZE];
+    char headers[MAX_HEADER_SIZE];
+    char body[MAX_REQUEST_SIZE];
+    int content_length;
+} http_request_t;
 
-  address.sin_family = AF_INET;
-  address.sin_port = port;
-  address.sin_addr.s_addr = INADDR_ANY;
+typedef struct {
+    char version[MAX_VERSION_SIZE];
+    int status_code;
+    char status_message[64];
+    char headers[MAX_HEADER_SIZE];
+    char body[MAX_RESPONSE_SIZE];
+    int content_length;
+} http_response_t;
 
-  if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
-    perror("Bind failed");
-    exit(127);
-  }
+typedef struct {
+    int client_socket;
+    struct sockaddr_in client_addr;
+} client_info_t;
 
-  if (listen(server_fd, 3) < 0) {
-    perror("error");
-    exit(EXIT_FAILURE);
-  }
+// Function declarations
+int start_http_server(int port);
+void* handle_client(void* arg);
+int parse_http_request(const char* request, http_request_t* parsed);
+int create_http_response(http_response_t* response, int status_code, const char* status_message, const char* body);
+int send_http_response(int client_socket, http_response_t* response);
+int handle_api_request(http_request_t* request, http_response_t* response);
+int handle_containers_api(http_request_t* request, http_response_t* response);
+int handle_images_api(http_request_t* request, http_response_t* response);
+int handle_container_create(http_request_t* request, http_response_t* response);
+int handle_container_start(http_request_t* request, http_response_t* response);
+int handle_container_stop(http_request_t* request, http_response_t* response);
+int handle_container_remove(http_request_t* request, http_response_t* response);
+int handle_image_build(http_request_t* request, http_response_t* response);
+int handle_image_list(http_request_t* request, http_response_t* response);
+int handle_image_remove(http_request_t* request, http_response_t* response);
+void cleanup_server(int server_socket);
 
-  printf("serrver listening on %d", port);
-}
+// Helper functions
+char* url_decode(const char* str);
+char* url_encode(const char* str);
+int extract_container_id_from_url(const char* url, char* container_id);
+int extract_image_name_from_url(const char* url, char* image_name);
+void log_request(http_request_t* request, struct sockaddr_in* client_addr);
+void log_response(http_response_t* response);
+
+#endif // HTTP_H

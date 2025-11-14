@@ -24,16 +24,14 @@ int child_main(void *arg) {
   // We are now in the child process, inside the new namespaces.
   printf("Child process PID (inside new namespace): %d\n", getpid());
 
-  // Step 1: Set a new hostname inside the UTS namespace.
-  printf("1. Setting new hostname to 'my-container-host'...\n");
+  //  Set a new hostname inside the UTS namespace.
   if (sethostname("my-container-host", 17) == -1) {
     die("sethostname");
   }
   printf("New hostname is: %s\n", "my-container-host");
 
-  // Step 2: Create a new mount namespace by making mounts private.
-  // This ensures mounts made here don't affect the parent's filesystem.
-  printf("2. Creating a private mount namespace...\n");
+  // This makes sure mounts made here don't affect the parent's filesystem.
+  printf("2. Creating a private mount namespace \n");
   if (mount(NULL, "/", NULL, MS_PRIVATE | MS_REC, NULL) == -1) {
     die("mount MS_PRIVATE");
   }
@@ -44,7 +42,6 @@ int child_main(void *arg) {
     die("mkdir new_root");
   }
 
-  // Step 3: Pivot the root filesystem to the new directory.
   // This is the key step to creating a containerized filesystem view.
   printf("3. Pivoting root to a temporary directory...\n");
   if (mount("tmpfs", new_root, "tmpfs", 0, NULL) == -1) {
@@ -73,6 +70,7 @@ int child_main(void *arg) {
   printf("4. Executing /bin/bash...\n");
   execlp("/bin/bash", "bash", (char *)NULL);
   die("execlp"); // Should not be reached
+  return EXIT_SUCCESS;
 }
 
 int main() {

@@ -53,7 +53,6 @@ int main() {
     }
   }
 
-  // Step 3: Set the memory limit for the new cgroup.
   // We write to memory.max, the equivalent of memory.limit_in_bytes in v1.
   printf("3. Setting memory limit to %s bytes...\n", MEMORY_LIMIT_BYTES);
   fd = open(limit_path, O_WRONLY);
