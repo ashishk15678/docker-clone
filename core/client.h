@@ -10,10 +10,12 @@
 #include <unistd.h>
 #include <errno.h>
 
+#include "config.h"
+
 #define MAX_RESPONSE_SIZE 8192
 #define MAX_REQUEST_SIZE 4096
-#define DEFAULT_DAEMON_PORT 2375
-#define DEFAULT_DAEMON_HOST "127.0.0.1"
+#define DEFAULT_DAEMON_PORT DOCKERD_PORT
+#define DEFAULT_DAEMON_HOST DOCKERD_HOST
 
 // Function declarations
 int connect_to_daemon(const char* host, int port);
@@ -41,7 +43,6 @@ int create_http_request(char* request, const char* method, const char* url, cons
 int parse_http_response(const char* response, int* status_code, char* body);
 void print_containers_json(const char* json);
 void print_images_json(const char* json);
-int is_daemon_running(const char* host, int port);
 
 #endif // CLIENT_H
 

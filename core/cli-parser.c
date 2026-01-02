@@ -29,12 +29,13 @@ parsed_command_t* parse_arguments(int argc, char *argv[]) {
         return NULL;
     }
 
-    // Initialize command structure
+    // clean the memory
     memset(cmd, 0, sizeof(parsed_command_t));
+
     cmd->type = get_command_type(argv[1]);
     cmd->args = malloc(sizeof(char*) * argc);
     cmd->argc = argc;
-    
+
     if (!cmd->args) {
         perror("malloc");
         free(cmd);
@@ -133,7 +134,7 @@ void parse_build_command(parsed_command_t *cmd, int argc, char *argv[]) {
             }
         }
     }
-    
+
     // Default dockerfile path if not specified
     if (strlen(cmd->dockerfile_path) == 0) {
         strcpy(cmd->dockerfile_path, "Dockerfile");
@@ -184,7 +185,7 @@ int validate_command(parsed_command_t *cmd) {
         case CMD_LOGS:
         case CMD_EXEC:
             if (strlen(cmd->container_name) == 0) {
-                fprintf(stderr, "Error: Container name required for '%s' command\n", 
+                fprintf(stderr, "Error: Container name required for '%s' command\n",
                         cmd->type == CMD_STOP ? "stop" :
                         cmd->type == CMD_RM ? "rm" :
                         cmd->type == CMD_LOGS ? "logs" : "exec");
@@ -205,7 +206,7 @@ int validate_command(parsed_command_t *cmd) {
 
 void free_parsed_command(parsed_command_t *cmd) {
     if (!cmd) return;
-    
+
     if (cmd->args) {
         for (int i = 0; i < cmd->argc; i++) {
             free(cmd->args[i]);
@@ -236,4 +237,3 @@ void print_usage(const char *program_name) {
     printf("  %s images\n", program_name);
     printf("  %s ps\n", program_name);
 }
-

@@ -12,6 +12,8 @@
 #include <signal.h>
 #include <errno.h>
 
+#include "config.h"
+
 #define MAX_REQUEST_SIZE 8192
 #define MAX_RESPONSE_SIZE 8192
 #define MAX_HEADER_SIZE 1024
@@ -20,8 +22,8 @@
 #define MAX_VERSION_SIZE 16
 #define MAX_THREADS 10
 
-#define DEFAULT_PORT 2375
-#define DEFAULT_HOST "127.0.0.1"
+#define DEFAULT_PORT DOCKERD_PORT
+#define DEFAULT_HOST DOCKERD_HOST
 
 typedef struct {
     char method[MAX_METHOD_SIZE];

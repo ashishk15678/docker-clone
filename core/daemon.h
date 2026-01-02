@@ -10,8 +10,11 @@
 #include <signal.h>
 #include <sys/prctl.h>
 
+#include "config.h"
+
 #define DAEMON_NAME "docker-clone-daemon"
-#define DAEMON_PORT 2375
+#define DAEMON_PORT DOCKERD_PORT
+#define DAEMON_HOST DOCKERD_HOST
 
 // Function declarations
 int start_daemon();

@@ -2,6 +2,7 @@
 #include <syscall.h>
 #include <sched.h>
 #include <linux/sched.h>
+#include <sched.h>
 
 int init_container_system() {
     if (create_container_directories() != 0) {
@@ -16,12 +17,23 @@ int create_container_directories() {
         CONTAINER_METADATA_DIR,
         CONTAINER_LOG_DIR
     };
-    
+
+    int createdDirsCount = 0;
     for (int i = 0; i < 3; i++) {
         if (mkdir(dirs[i], 0755) != 0 && errno != EEXIST) {
+
+            // cleanup of already created dirs
+            for (int j = 0 ;  j < createdDirsCount; j++){
+                if( rmdir(dirs[j]) < 0){
+                    printf("ERROR : Dir %s wasn't deleted",dirs[j]);
+                }
+            }
+
+
             perror("mkdir");
             return -1;
         }
+        createdDirsCount++;
     }
     return 0;
 }
@@ -45,13 +57,13 @@ int container_exists(const char *container_id) {
     return access(metadata_path, F_OK) == 0;
 }
 
-int create_container(const char *name, const char *image, const char *command, 
-                    const char *working_dir, const char *env_vars, 
+int create_container(const char *name, const char *image, const char *command,
+                    const char *working_dir, const char *env_vars,
                     const char *port_mappings, const char *volume_mappings,
                     int interactive, int tty, int detach) {
     container_info_t container;
     char container_path[MAX_PATH_LEN];
-    
+
     // Initialize container structure
     memset(&container, 0, sizeof(container));
     strcpy(container.id, generate_container_id());
@@ -67,45 +79,45 @@ int create_container(const char *name, const char *image, const char *command,
     container.tty = tty;
     container.detach = detach;
     snprintf(container.created, sizeof(container.created), "%ld", time(NULL));
-    
+
     // Create container directory
     strcpy(container_path, get_container_full_path(container.id));
     if (mkdir(container_path, 0755) != 0 && errno != EEXIST) {
         perror("mkdir container");
         return -1;
     }
-    
+
     // Create rootfs directory
     snprintf(container.rootfs_path, sizeof(container.rootfs_path), "%s/rootfs", container_path);
     if (mkdir(container.rootfs_path, 0755) != 0 && errno != EEXIST) {
         perror("mkdir rootfs");
         return -1;
     }
-    
+
     // Create log file
     snprintf(container.log_path, sizeof(container.log_path), "%s/%s.log", CONTAINER_LOG_DIR, container.id);
-    
+
     // Create config file path
     snprintf(container.config_path, sizeof(container.config_path), "%s/%s.json", CONTAINER_METADATA_DIR, container.id);
-    
+
     // Write metadata
     if (write_container_metadata(&container) != 0) {
         return -1;
     }
-    
+
     printf("Container %s created successfully\n", container.id);
     return 0;
 }
 
 int write_container_metadata(container_info_t *container) {
     FILE *fp;
-    
+
     fp = fopen(container->config_path, "w");
     if (!fp) {
         perror("fopen container metadata");
         return -1;
     }
-    
+
     fprintf(fp, "{\n");
     fprintf(fp, "  \"id\": \"%s\",\n", container->id);
     fprintf(fp, "  \"name\": \"%s\",\n", container->name);
@@ -137,7 +149,7 @@ int write_container_metadata(container_info_t *container) {
     fprintf(fp, "  \"cpu_limit\": %d,\n", container->cpu_limit);
     fprintf(fp, "  \"pid_limit\": %d\n", container->pid_limit);
     fprintf(fp, "}\n");
-    
+
     fclose(fp);
     return 0;
 }
@@ -146,14 +158,14 @@ int read_container_metadata(const char *container_id, container_info_t *containe
     char metadata_path[MAX_PATH_LEN];
     FILE *fp;
     char line[1024];
-    
+
     snprintf(metadata_path, sizeof(metadata_path), "%s/%s.json", CONTAINER_METADATA_DIR, container_id);
-    
+
     fp = fopen(metadata_path, "r");
     if (!fp) {
         return -1;
     }
-    
+
     // Simple JSON parsing
     while (fgets(line, sizeof(line), fp)) {
         if (strstr(line, "\"id\"")) {
@@ -178,7 +190,7 @@ int read_container_metadata(const char *container_id, container_info_t *containe
             sscanf(line, "  \"exit_code\": %d", &container->exit_code);
         }
     }
-    
+
     fclose(fp);
     return 0;
 }
@@ -187,54 +199,55 @@ int start_container(const char *container_id) {
     container_info_t container;
     char *stack;
     pid_t child_pid;
-    
+
     if (!container_exists(container_id)) {
         fprintf(stderr, "Container %s does not exist\n", container_id);
         return -1;
     }
-    
+
     if (read_container_metadata(container_id, &container) != 0) {
         fprintf(stderr, "Failed to read container metadata\n");
         return -1;
     }
-    
+
     if (container.state == CONTAINER_STATE_RUNNING) {
         fprintf(stderr, "Container %s is already running\n", container_id);
         return -1;
     }
-    
+
     // Allocate stack for child process
     stack = malloc(STACK_SIZE);
     if (!stack) {
         perror("malloc stack");
         return -1;
     }
-    
+
     printf("Starting container %s...\n", container_id);
-    
+
     // Create new namespaces and start container
+    // provided by sched.h , but even after adding the lib , error persists
     child_pid = clone(child_main, stack + STACK_SIZE,
                      CLONE_NEWPID | CLONE_NEWUTS | CLONE_NEWNS | SIGCHLD, &container);
-    
+
     if (child_pid == -1) {
         perror("clone");
         free(stack);
         return -1;
     }
-    
+
     // Update container metadata
     container.pid = child_pid;
     container.state = CONTAINER_STATE_RUNNING;
     snprintf(container.started, sizeof(container.started), "%ld", time(NULL));
-    
+
     if (write_container_metadata(&container) != 0) {
         kill(child_pid, SIGKILL);
         free(stack);
         return -1;
     }
-    
+
     printf("Container %s started with PID %d\n", container_id, child_pid);
-    
+
     if (container.detach) {
         free(stack);
         return 0;
@@ -242,13 +255,13 @@ int start_container(const char *container_id) {
         // Wait for container to exit
         int status;
         waitpid(child_pid, &status, 0);
-        
+
         // Update container state
         container.state = CONTAINER_STATE_EXITED;
         container.exit_code = WEXITSTATUS(status);
         snprintf(container.finished, sizeof(container.finished), "%ld", time(NULL));
         write_container_metadata(&container);
-        
+
         free(stack);
         return 0;
     }
@@ -256,48 +269,48 @@ int start_container(const char *container_id) {
 
 int child_main(void *arg) {
     container_info_t *container = (container_info_t *)arg;
-    
+
     printf("Child process PID (inside container): %d\n", getpid());
-    
+
     // Set hostname
     if (sethostname(container->name, strlen(container->name)) == -1) {
         perror("sethostname");
     }
-    
+
     // Setup mount namespace
     if (mount(NULL, "/", NULL, MS_PRIVATE | MS_REC, NULL) == -1) {
         perror("mount MS_PRIVATE");
     }
-    
+
     // Create new root filesystem
     if (mount("tmpfs", container->rootfs_path, "tmpfs", 0, NULL) == -1) {
         perror("mount tmpfs");
     }
-    
+
     // Pivot root
     char old_root[256];
     snprintf(old_root, sizeof(old_root), "%s/old-root", container->rootfs_path);
-    
+
     if (mkdir(old_root, 0755) == -1 && errno != EEXIST) {
         perror("mkdir old-root");
     }
-    
+
     if (syscall(SYS_pivot_root, container->rootfs_path, old_root) == -1) {
         perror("pivot_root");
     }
-    
+
     if (chdir("/") == -1) {
         perror("chdir /");
     }
-    
+
     if (umount2("/old-root", MNT_DETACH) == -1) {
         perror("umount old-root");
     }
-    
+
     if (rmdir("/old-root") == -1) {
         perror("rmdir old-root");
     }
-    
+
     // Execute container command
     if (strlen(container->command) > 0) {
         printf("Executing command: %s\n", container->command);
@@ -308,52 +321,52 @@ int child_main(void *arg) {
         execlp("/bin/bash", "bash", (char *)NULL);
         perror("execlp");
     }
-    
+
     return 0;
 }
 
 int stop_container(const char *container_id) {
     container_info_t container;
-    
+
     if (!container_exists(container_id)) {
         fprintf(stderr, "Container %s does not exist\n", container_id);
         return -1;
     }
-    
+
     if (read_container_metadata(container_id, &container) != 0) {
         fprintf(stderr, "Failed to read container metadata\n");
         return -1;
     }
-    
+
     if (container.state != CONTAINER_STATE_RUNNING) {
         fprintf(stderr, "Container %s is not running\n", container_id);
         return -1;
     }
-    
+
     printf("Stopping container %s...\n", container_id);
-    
+
     // Send SIGTERM to container process
     if (kill(container.pid, SIGTERM) != 0) {
         perror("kill SIGTERM");
         return -1;
     }
-    
+
     // Wait for process to exit
     int status;
     if (waitpid(container.pid, &status, 0) == -1) {
         perror("waitpid");
         return -1;
     }
-    
+
     // Update container state
     container.state = CONTAINER_STATE_EXITED;
     container.exit_code = WEXITSTATUS(status);
     snprintf(container.finished, sizeof(container.finished), "%ld", time(NULL));
-    
+
     if (write_container_metadata(&container) != 0) {
         return -1;
     }
-    
+
     printf("Container %s stopped\n", container_id);
     return 0;
 }
@@ -362,31 +375,31 @@ int restart_container(const char *container_id) {
     if (stop_container(container_id) != 0) {
         return -1;
     }
-    
+
     return start_container(container_id);
 }
 
 int remove_container(const char *container_id) {
     container_info_t container;
     char container_path[MAX_PATH_LEN];
-    
+
     if (!container_exists(container_id)) {
         fprintf(stderr, "Container %s does not exist\n", container_id);
         return -1;
     }
-    
+
     if (read_container_metadata(container_id, &container) != 0) {
         fprintf(stderr, "Failed to read container metadata\n");
         return -1;
     }
-    
+
     if (container.state == CONTAINER_STATE_RUNNING) {
         fprintf(stderr, "Cannot remove running container %s\n", container_id);
         return -1;
     }
-    
+
     printf("Removing container %s...\n", container_id);
-    
+
     // Remove container directory
     strcpy(container_path, get_container_full_path(container_id));
     char rm_cmd[1024];
@@ -395,19 +408,19 @@ int remove_container(const char *container_id) {
         fprintf(stderr, "Failed to remove container directory\n");
         return -1;
     }
-    
+
     // Remove metadata file
     if (unlink(container.config_path) != 0) {
         perror("unlink metadata");
         return -1;
     }
-    
+
     // Remove log file
     if (unlink(container.log_path) != 0 && errno != ENOENT) {
         perror("unlink log");
         return -1;
     }
-    
+
     printf("Container %s removed\n", container_id);
     return 0;
 }
@@ -418,13 +431,13 @@ container_list_t* list_containers() {
     container_list_t *list;
     container_info_t *containers;
     int count = 0;
-    
+
     list = malloc(sizeof(container_list_t));
     if (!list) {
         perror("malloc");
         return NULL;
     }
-    
+
     // Count metadata files
     dir = opendir(CONTAINER_METADATA_DIR);
     if (!dir) {
@@ -432,28 +445,28 @@ container_list_t* list_containers() {
         free(list);
         return NULL;
     }
-    
+
     while ((entry = readdir(dir)) != NULL) {
         if (strstr(entry->d_name, ".json")) {
             count++;
         }
     }
     closedir(dir);
-    
+
     if (count == 0) {
         list->containers = NULL;
         list->count = 0;
         list->capacity = 0;
         return list;
     }
-    
+
     containers = malloc(sizeof(container_info_t) * count);
     if (!containers) {
         perror("malloc");
         free(list);
         return NULL;
     }
-    
+
     // Read metadata files
     dir = opendir(CONTAINER_METADATA_DIR);
     count = 0;
@@ -461,58 +474,58 @@ container_list_t* list_containers() {
         if (strstr(entry->d_name, ".json")) {
             char container_id[MAX_CONTAINER_ID_LEN];
             sscanf(entry->d_name, "%[^.].json", container_id);
-            
+
             if (read_container_metadata(container_id, &containers[count]) == 0) {
                 count++;
             }
         }
     }
     closedir(dir);
-    
+
     list->containers = containers;
     list->count = count;
     list->capacity = count;
-    
+
     return list;
 }
 
 container_info_t* get_container_info(const char *container_id) {
     container_info_t *container;
-    
+
     container = malloc(sizeof(container_info_t));
     if (!container) {
         perror("malloc");
         return NULL;
     }
-    
+
     if (read_container_metadata(container_id, container) != 0) {
         free(container);
         return NULL;
     }
-    
+
     return container;
 }
 
 int is_container_running(const char *container_id) {
     container_info_t container;
-    
+
     if (read_container_metadata(container_id, &container) != 0) {
         return 0;
     }
-    
+
     return container.state == CONTAINER_STATE_RUNNING;
 }
 
 int cleanup_container_system() {
     char rm_cmd[1024];
-    
-    snprintf(rm_cmd, sizeof(rm_cmd), "rm -rf %s %s %s", 
+
+    snprintf(rm_cmd, sizeof(rm_cmd), "rm -rf %s %s %s",
              CONTAINER_STORAGE_DIR, CONTAINER_METADATA_DIR, CONTAINER_LOG_DIR);
-    
+
     if (system(rm_cmd) != 0) {
         fprintf(stderr, "Failed to cleanup container system\n");
         return -1;
     }
-    
+
     return 0;
 }
